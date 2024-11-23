@@ -56,15 +56,18 @@ if bnb is not None:
     ax.set_title("Price Distribution")
     st.pyplot(fig)
 
-    # Correlation Heatmap
-    st.subheader("Correlation Heatmap")
-    if not bnb.select_dtypes(include=[np.number]).empty:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(bnb.corr(), annot=True, vmin=-1, vmax=1, cmap='coolwarm', ax=ax)
-        ax.set_title("Feature Correlation")
-        st.pyplot(fig)
-    else:
-        st.warning("No numerical columns available for correlation analysis.")
+# Correlation Heatmap
+st.subheader("Correlation Heatmap")
+# Select only numeric columns for correlation
+numeric_cols = bnb.select_dtypes(include=[np.number])
+if not numeric_cols.empty:
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(numeric_cols.corr(), annot=True, vmin=-1, vmax=1, cmap='coolwarm', ax=ax)
+    ax.set_title("Feature Correlation")
+    st.pyplot(fig)
+else:
+    st.warning("No numerical columns available for correlation analysis.")
+
 
     # Regression Plot for Price and Minimum Nights
     st.subheader("Price vs Minimum Nights")
