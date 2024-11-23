@@ -1,65 +1,43 @@
-# Import necessary libraries
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
+from matplotlib.cbook import boxplot_stats  
+import statsmodels.api as sm
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, cross_val_predict
+from statsmodels.stats.outliers_influence import variance_inflation_factor 
+from sklearn.tree import DecisionTreeRegressor
+from sklearn import ensemble
 import numpy as np
-import streamlit as st
+import plotly.express as px 
+import plotly.figure_factory as ff
+import warnings
+warnings.filterwarnings("ignore")
+import pickle
+import os
 
-# Load data
+# Function to load data with error handling
 def load_data():
-    return pd.read_csv('listings.csv')
+    try:
+        # Load the CSV file
+        data = pd.read_csv('listings.csv')
+        if data.empty:
+            raise ValueError("The CSV file is empty.")
+        return data
+    except FileNotFoundError:
+        raise FileNotFoundError("The file listings.csv was not found.")
+    except pd.errors.EmptyDataError:
+        raise ValueError("The CSV file is empty.")
+    except Exception as e:
+        raise Exception(f"An error occurred while loading the data: {e}")
 
+# Load the data
 bnb = load_data()
 
-# Display the first few rows of the dataframe
-st.write(bnb.head())
-
-# Data Cleaning Function: Check for missing or infinite values
-def clean_data(X, y):
-    # Remove rows where there are any missing values in either X or y
-    X_clean = X[~X.isnull().any(axis=1)]
-    y_clean = y[X_clean.index]  # Ensure the y data corresponds to the cleaned X
-
-    # Remove any rows with infinite values
-    X_clean = X_clean[~X_clean.isin([np.inf, -np.inf]).any(axis=1)]
-    y_clean = y_clean[X_clean.index]
-
-    return X_clean, y_clean
-
-# Display data info
-st.write(bnb.info())
-
-# Clean data
-X = bnb.drop('neighbourhood_group', axis=1)  # Drop target variable
-y = bnb['neighbourhood_group']  # Target variable
-
-# Clean the data
-X_clean, y_clean = clean_data(X, y)
-
-# Train-test split after cleaning
-X_train, X_test, y_train, y_test = train_test_split(X_clean, y_clean, test_size=0.30, random_state=42)
-
-# Standardizing the data
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# Train Linear Regression model
-lr = LinearRegression()
-lr.fit(X_train_scaled, y_train)
-
-# Display coefficients of the linear regression model
-st.write('Linear Regression Coefficients:', lr.coef_)
-
-# Predictions
-y_pred = lr.predict(X_test_scaled)
-
-# Display predictions and true values
-st.write('Predicted values:', y_pred[:5])
-st.write('True values:', y_test.head())
+# Display basic information about the dataset
+bnb.columns
+bnb.shape
+bnb.info()
+bnb.describe()
 
 # Visualizations
 fig, axes = plt.subplots(1, 2, figsize=(10, 5))
@@ -67,35 +45,68 @@ sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
 sns.histplot(bnb['room_type'], color="olive", ax=axes[1])
 plt.show()
 
-# Correlation heatmap
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.heatmap(bnb.corr(), annot=True, vmin=-1, vmax=1, cmap='coolwarm', ax=ax)
+# Finding the outlier values in the price column
+outlier_list = boxplot_stats(bnb['price']).pop(0)['fliers'].tolist()
+print(outlier_list)
+
+# Finding the number of rows containing outliers
+outlier_neighbourhood_rows = bnb[bnb.neighbourhood.isin(outlier_list)].shape[0]
+print("Number of rows containing outliers in neighbourhood:", outlier_neighbourhood_rows)
+
+# Percentage of rows which are outliers
+percent_neighbourhood_outlier = (outlier_neighbourhood_rows / bnb.shape[0]) * 100
+print("Percentage of outliers in neighbourhood columns:", percent_neighbourhood_outlier)
+
+# Visualizations using Plotly
+px.histogram(data_frame=bnb, x="neighbourhood_group", nbins=60, marginal="box", title="neighbourhood_group")
+px.histogram(data_frame=bnb, x="neighbourhood", nbins=60, marginal="box", title="neighbourhood")
+
+# Heatmap of correlations
+heatmap = sns.heatmap(bnb.corr(), vmin=-1, vmax=1, annot=True)
+
+# Visualizing relationships between room type, price, and neighbourhood group
+sns.relplot(x="neighbourhood_group", y="price", hue="room_type", style="room_type", data=bnb)
+sns.boxplot(x="room_type", y="price", data=bnb)
+
+# Linear regression between price and minimum nights
+sns.regplot(x="price", y="minimum_nights", data=bnb, fit_reg=True)
 plt.show()
 
-# Feature importance using a simple decision tree model
-from sklearn.tree import DecisionTreeClassifier
+# Linear regression model using Statsmodels
+from statsmodels.formula.api import ols
+m = ols('price ~ minimum_nights', bnb).fit()
+print(m.summary())
 
-# Train Decision Tree model
-dt = DecisionTreeClassifier(random_state=42)
-dt.fit(X_train_scaled, y_train)
+# More complex model with multiple variables
+m = ols('price ~ minimum_nights + neighbourhood_group + neighbourhood + room_type + reviews_per_month + number_of_reviews', bnb).fit()
+print(m.summary())
 
-# Display feature importances
-st.write('Feature Importances (Decision Tree):', dt.feature_importances_)
+# Preparing data for machine learning model
+X = bnb.drop('neighbourhood_group', axis=1)
+y = bnb['neighbourhood_group']
 
-# Model evaluation
-from sklearn.metrics import mean_squared_error, r2_score
+# Splitting data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30)
 
-# Evaluate the Linear Regression model
-mse = mean_squared_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+# Spot check algorithms
+from sklearn.model_selection import StratifiedKFold
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.naive_bayes import GaussianNB
 
-st.write(f'Mean Squared Error: {mse}')
-st.write(f'R-squared: {r2}')
+models = []
+models.append(('LDA', LinearDiscriminantAnalysis()))
+models.append(('NB', GaussianNB()))
 
-# Visualizing predictions vs. true values
-fig, ax = plt.subplots(figsize=(10, 6))
-sns.scatterplot(x=y_test, y=y_pred, alpha=0.5, ax=ax)
-ax.set_title('True vs Predicted values')
-ax.set_xlabel('True Values')
-ax.set_ylabel('Predicted Values')
-plt.show()
+results = []
+names = []
+for name, model in models:
+    kfold = StratifiedKFold(n_splits=5, random_state=1, shuffle=True)
+    cv_results = cross_val_score(model, X_train, y_train, cv=kfold, scoring='accuracy')
+    results.append(cv_results)
+    names.append(name)
+    print(f'{name}: {cv_results.mean()} ({cv_results.std()})')
+
+# Save the model for future use
+filename = 'bnb_model.pkl'
+with open(filename, 'wb') as file:
+    pickle.dump(m, file)
