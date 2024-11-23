@@ -125,4 +125,3 @@ st.pyplot()
 st.subheader("Model Summary")
 ols_model = ols('price ~ minimum_nights + neighbourhood_group + room_type + reviews_per_month + number_of_reviews', data=bnb).fit()
 st.write(ols_model.summary())
-
