@@ -1,91 +1,46 @@
-# Importing the libraries
+# Import necessary libraries
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import plotly.express as px
-import numpy as np
-import streamlit as st
-import warnings
-from matplotlib.cbook import boxplot_stats
 from sklearn.model_selection import train_test_split
-from statsmodels.formula.api import ols
-from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
+import numpy as np
+import streamlit as st
 
 # Load data
-@st.cache_data
 def load_data():
-    bnb = pd.read_csv('listings.csv')
-    return bnb
+    return pd.read_csv('listings.csv')
 
 bnb = load_data()
 
-# Display basic dataset information
-st.title("Airbnb Price Prediction")
-st.header("Dataset Overview")
+# Display the first few rows of the dataframe
+st.write(bnb.head())
 
-st.write("Shape of the dataset:", bnb.shape)
-st.write("Dataset Info:")
+# Data Cleaning Function: Check for missing or infinite values
+def clean_data(X, y):
+    # Remove rows where there are any missing values in either X or y
+    X_clean = X[~X.isnull().any(axis=1)]
+    y_clean = y[X_clean.index]  # Ensure the y data corresponds to the cleaned X
+
+    # Remove any rows with infinite values
+    X_clean = X_clean[~X_clean.isin([np.inf, -np.inf]).any(axis=1)]
+    y_clean = y_clean[X_clean.index]
+
+    return X_clean, y_clean
+
+# Display data info
 st.write(bnb.info())
 
-# Histograms for neighborhood and room type
-fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
-sns.histplot(bnb['room_type'], color="olive", ax=axes[1])
-st.pyplot(fig)
+# Clean data
+X = bnb.drop('neighbourhood_group', axis=1)  # Drop target variable
+y = bnb['neighbourhood_group']  # Target variable
 
-# Outlier Detection
-outlier_list = boxplot_stats(bnb['price']).pop(0)['fliers'].tolist()
-st.write("Outlier List:", outlier_list)
+# Clean the data
+X_clean, y_clean = clean_data(X, y)
 
-# Finding the number of rows containing outliers
-outlier_neighbourhood_rows = bnb[bnb['neighbourhood'].isin(outlier_list)].shape[0]
-outlier_neighbourhood_group_rows = bnb[bnb['neighbourhood_group'].isin(outlier_list)].shape[0]
-
-# Showing outlier details
-st.write(f"Number of rows containing outliers in neighbourhood: {outlier_neighbourhood_rows}")
-st.write(f"Percentage of outliers in neighbourhood: {(outlier_neighbourhood_rows / bnb.shape[0]) * 100:.2f}%")
-st.write(f"Number of rows containing outliers in neighbourhood_group: {outlier_neighbourhood_group_rows}")
-st.write(f"Percentage of outliers in neighbourhood_group: {(outlier_neighbourhood_group_rows / bnb.shape[0]) * 100:.2f}%")
-
-# Plotting neighborhood distributions using Plotly
-st.subheader("Neighborhood Group Distribution")
-px.histogram(bnb, x="neighbourhood_group", nbins=60, marginal="box", title="Neighborhood Group Distribution").show()
-
-st.subheader("Neighborhood Distribution")
-px.histogram(bnb, x="neighbourhood", nbins=60, marginal="box", title="Neighborhood Distribution").show()
-
-# Correlation Heatmap for numeric columns
-st.subheader("Correlation Heatmap")
-numeric_cols = bnb.select_dtypes(include=[np.number])
-if not numeric_cols.empty:
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(numeric_cols.corr(), annot=True, vmin=-1, vmax=1, cmap='coolwarm', ax=ax)
-    ax.set_title("Feature Correlation")
-    st.pyplot(fig)
-else:
-    st.warning("No numerical columns available for correlation analysis.")
-
-# Regression Plot for Price vs Minimum Nights
-sns.regplot(x="price", y="minimum_nights", data=bnb, fit_reg=True)
-plt.title("Price vs Minimum Nights")
-st.pyplot()
-
-# Linear Regression Model to Predict Prices
-st.subheader("Linear Regression Model to Predict Prices")
-# Selecting features for the model
-X = bnb[['minimum_nights', 'neighbourhood_group', 'room_type', 'reviews_per_month', 'number_of_reviews']]
-y = bnb['price']
-
-# One-hot encoding for categorical variables
-X = pd.get_dummies(X, drop_first=True)
-
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=42)
+# Train-test split after cleaning
+X_train, X_test, y_train, y_test = train_test_split(X_clean, y_clean, test_size=0.30, random_state=42)
 
 # Standardizing the data
 scaler = StandardScaler()
@@ -96,32 +51,51 @@ X_test_scaled = scaler.transform(X_test)
 lr = LinearRegression()
 lr.fit(X_train_scaled, y_train)
 
-# Predicting prices
-y_pred_test = lr.predict(X_test_scaled)
+# Display coefficients of the linear regression model
+st.write('Linear Regression Coefficients:', lr.coef_)
 
-# Model Evaluation
-st.write("Model Evaluation")
-st.write(f"Coefficient of Determination (R^2): {r2_score(y_test, y_pred_test):.2f}")
-st.write(f"Mean Absolute Error (MAE): {mean_absolute_error(y_test, y_pred_test):.2f}")
-st.write(f"Mean Squared Error (MSE): {mean_squared_error(y_test, y_pred_test):.2f}")
-st.write(f"Root Mean Squared Error (RMSE): {np.sqrt(mean_squared_error(y_test, y_pred_test)):.2f}")
+# Predictions
+y_pred = lr.predict(X_test_scaled)
 
-# Scatterplot of Actual vs Predicted Prices
-st.subheader("Scatterplot of Actual vs Predicted Prices")
-fig, ax = plt.subplots(figsize=(6, 6))
-sns.scatterplot(x=y_test, y=y_pred_test, alpha=0.5, ax=ax)
-plt.plot([0, max(y_test)], [0, max(y_test)], c='red', linewidth=2)
-plt.title("Actual vs Predicted Prices")
-plt.xlabel("Actual Prices")
-plt.ylabel("Predicted Prices")
-st.pyplot(fig)
+# Display predictions and true values
+st.write('Predicted values:', y_pred[:5])
+st.write('True values:', y_test.head())
 
-# Boxplot of Price by Room Type
-sns.boxplot(x="room_type", y="price", data=bnb)
-plt.title("Price Distribution by Room Type")
-st.pyplot()
+# Visualizations
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
+sns.histplot(bnb['room_type'], color="olive", ax=axes[1])
+plt.show()
 
-# Linear Regression Model Summary
-st.subheader("Model Summary")
-ols_model = ols('price ~ minimum_nights + neighbourhood_group + room_type + reviews_per_month + number_of_reviews', data=bnb).fit()
-st.write(ols_model.summary())
+# Correlation heatmap
+fig, ax = plt.subplots(figsize=(10, 8))
+sns.heatmap(bnb.corr(), annot=True, vmin=-1, vmax=1, cmap='coolwarm', ax=ax)
+plt.show()
+
+# Feature importance using a simple decision tree model
+from sklearn.tree import DecisionTreeClassifier
+
+# Train Decision Tree model
+dt = DecisionTreeClassifier(random_state=42)
+dt.fit(X_train_scaled, y_train)
+
+# Display feature importances
+st.write('Feature Importances (Decision Tree):', dt.feature_importances_)
+
+# Model evaluation
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Evaluate the Linear Regression model
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+st.write(f'Mean Squared Error: {mse}')
+st.write(f'R-squared: {r2}')
+
+# Visualizing predictions vs. true values
+fig, ax = plt.subplots(figsize=(10, 6))
+sns.scatterplot(x=y_test, y=y_pred, alpha=0.5, ax=ax)
+ax.set_title('True vs Predicted values')
+ax.set_xlabel('True Values')
+ax.set_ylabel('Predicted Values')
+plt.show()
