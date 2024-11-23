@@ -1,64 +1,66 @@
+# Importing the libraries
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import streamlit as st
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score
+import plotly.express as px
 import numpy as np
+import streamlit as st
+import warnings
+from matplotlib.cbook import boxplot_stats
+from sklearn.model_selection import train_test_split
+from statsmodels.formula.api import ols
+from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 
-# Load the dataset
+# Suppress warnings
+warnings.filterwarnings("ignore")
+
+# Load data
 @st.cache_data
 def load_data():
-    try:
-        data = pd.read_csv('listings.csv')
-        return data
-    except FileNotFoundError:
-        st.error("The dataset file 'listings.csv' is missing.")
-        return None
+    bnb = pd.read_csv('listings.csv')
+    return bnb
 
-# App title
-st.title("Airbnb Data Analysis and Price Prediction")
-
-# Load dataset
 bnb = load_data()
 
-if bnb is not None:
-    # Show dataset overview
-    st.header("Dataset Overview")
-    st.write("Shape of the dataset:", bnb.shape)
-    st.write("Dataset Columns:", bnb.columns.tolist())
-    st.write(bnb.describe())
-    st.write("Dataset Sample:")
-    st.dataframe(bnb.head())
+# Display basic dataset information
+st.title("Airbnb Price Prediction")
+st.header("Dataset Overview")
 
-    # Visualizations
-    st.header("Exploratory Data Analysis")
+st.write("Shape of the dataset:", bnb.shape)
+st.write("Dataset Info:")
+st.write(bnb.info())
 
-    # Neighborhood Group Distribution
-    st.subheader("Distribution of Neighborhood Groups")
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.countplot(x='neighbourhood_group', data=bnb, palette='coolwarm', ax=ax)
-    ax.set_title("Neighborhood Group Distribution")
-    st.pyplot(fig)
+# Histograms for neighborhood and room type
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
+sns.histplot(bnb['room_type'], color="olive", ax=axes[1])
+st.pyplot(fig)
 
-    # Room Type Distribution
-    st.subheader("Distribution of Room Types")
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.countplot(x='room_type', data=bnb, palette='viridis', ax=ax)
-    ax.set_title("Room Type Distribution")
-    st.pyplot(fig)
+# Outlier Detection
+outlier_list = boxplot_stats(bnb['price']).pop(0)['fliers'].tolist()
+st.write("Outlier List:", outlier_list)
 
-    # Price Distribution
-    st.subheader("Price Distribution")
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.histplot(bnb['price'], kde=True, color='blue', ax=ax)
-    ax.set_title("Price Distribution")
-    st.pyplot(fig)
+# Finding the number of rows containing outliers
+outlier_neighbourhood_rows = bnb[bnb['neighbourhood'].isin(outlier_list)].shape[0]
+outlier_neighbourhood_group_rows = bnb[bnb['neighbourhood_group'].isin(outlier_list)].shape[0]
 
-# Correlation Heatmap
+# Showing outlier details
+st.write(f"Number of rows containing outliers in neighbourhood: {outlier_neighbourhood_rows}")
+st.write(f"Percentage of outliers in neighbourhood: {(outlier_neighbourhood_rows / bnb.shape[0]) * 100:.2f}%")
+st.write(f"Number of rows containing outliers in neighbourhood_group: {outlier_neighbourhood_group_rows}")
+st.write(f"Percentage of outliers in neighbourhood_group: {(outlier_neighbourhood_group_rows / bnb.shape[0]) * 100:.2f}%")
+
+# Plotting neighborhood distributions using Plotly
+st.subheader("Neighborhood Group Distribution")
+px.histogram(bnb, x="neighbourhood_group", nbins=60, marginal="box", title="Neighborhood Group Distribution").show()
+
+st.subheader("Neighborhood Distribution")
+px.histogram(bnb, x="neighbourhood", nbins=60, marginal="box", title="Neighborhood Distribution").show()
+
+# Correlation Heatmap for numeric columns
 st.subheader("Correlation Heatmap")
-# Select only numeric columns for correlation
 numeric_cols = bnb.select_dtypes(include=[np.number])
 if not numeric_cols.empty:
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -68,54 +70,59 @@ if not numeric_cols.empty:
 else:
     st.warning("No numerical columns available for correlation analysis.")
 
+# Regression Plot for Price vs Minimum Nights
+sns.regplot(x="price", y="minimum_nights", data=bnb, fit_reg=True)
+plt.title("Price vs Minimum Nights")
+st.pyplot()
 
-    # Regression Plot for Price and Minimum Nights
-    st.subheader("Price vs Minimum Nights")
-    if 'price' in bnb.columns and 'minimum_nights' in bnb.columns:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.regplot(x="price", y="minimum_nights", data=bnb, ax=ax, fit_reg=True)
-        ax.set_title("Regression Plot: Price vs Minimum Nights")
-        st.pyplot(fig)
-    else:
-        st.warning("Price or Minimum Nights column missing for analysis.")
+# Linear Regression Model to Predict Prices
+st.subheader("Linear Regression Model to Predict Prices")
+# Selecting features for the model
+X = bnb[['minimum_nights', 'neighbourhood_group', 'room_type', 'reviews_per_month', 'number_of_reviews']]
+y = bnb['price']
 
-    # Handle missing values
-    st.subheader("Handling Missing Values")
-    st.write("Missing Values Before Cleaning:")
-    st.write(bnb.isnull().sum())
-    bnb = bnb.dropna()
-    st.write("Missing Values After Cleaning:")
-    st.write(bnb.isnull().sum())
+# One-hot encoding for categorical variables
+X = pd.get_dummies(X, drop_first=True)
 
-    # Feature selection
-    st.subheader("Feature Selection and Model Training")
-    features = ['minimum_nights', 'number_of_reviews', 'reviews_per_month', 'calculated_host_listings_count', 'availability_365']
-    target = 'price'
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=42)
 
-    if all(col in bnb.columns for col in features + [target]):
-        X = bnb[features]
-        y = bnb[target]
+# Standardizing the data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-        # Train-test split
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# Train Linear Regression model
+lr = LinearRegression()
+lr.fit(X_train_scaled, y_train)
 
-        # Train model
-        model = RandomForestRegressor(random_state=42)
-        model.fit(X_train, y_train)
+# Predicting prices
+y_pred_test = lr.predict(X_test_scaled)
 
-        # Predictions and evaluation
-        y_pred = model.predict(X_test)
+# Model Evaluation
+st.write("Model Evaluation")
+st.write(f"Coefficient of Determination (R^2): {r2_score(y_test, y_pred_test):.2f}")
+st.write(f"Mean Absolute Error (MAE): {mean_absolute_error(y_test, y_pred_test):.2f}")
+st.write(f"Mean Squared Error (MSE): {mean_squared_error(y_test, y_pred_test):.2f}")
+st.write(f"Root Mean Squared Error (RMSE): {np.sqrt(mean_squared_error(y_test, y_pred_test)):.2f}")
 
-        st.subheader("Model Evaluation")
-        st.write("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
-        st.write("R^2 Score:", r2_score(y_test, y_pred))
+# Scatterplot of Actual vs Predicted Prices
+st.subheader("Scatterplot of Actual vs Predicted Prices")
+fig, ax = plt.subplots(figsize=(6, 6))
+sns.scatterplot(x=y_test, y=y_pred_test, alpha=0.5, ax=ax)
+plt.plot([0, max(y_test)], [0, max(y_test)], c='red', linewidth=2)
+plt.title("Actual vs Predicted Prices")
+plt.xlabel("Actual Prices")
+plt.ylabel("Predicted Prices")
+st.pyplot(fig)
 
-        # Feature Importance
-        st.subheader("Feature Importance")
-        feature_importance = pd.DataFrame({'Feature': features, 'Importance': model.feature_importances_})
-        feature_importance = feature_importance.sort_values(by='Importance', ascending=False)
-        st.bar_chart(feature_importance.set_index('Feature'))
-    else:
-        st.error("Required features or target variable not found in the dataset.")
-else:
-    st.error("Dataset could not be loaded. Please ensure the file exists.")
+# Boxplot of Price by Room Type
+sns.boxplot(x="room_type", y="price", data=bnb)
+plt.title("Price Distribution by Room Type")
+st.pyplot()
+
+# Linear Regression Model Summary
+st.subheader("Model Summary")
+ols_model = ols('price ~ minimum_nights + neighbourhood_group + room_type + reviews_per_month + number_of_reviews', data=bnb).fit()
+st.write(ols_model.summary())
+
