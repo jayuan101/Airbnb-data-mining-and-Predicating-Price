@@ -4,5 +4,5 @@ matplotlib
 seaborn
 statsmodels
 scikit-learn
-plotly=
+plotly
 streamlit
