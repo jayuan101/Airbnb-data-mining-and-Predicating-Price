@@ -1,36 +1,51 @@
-# ============================
-# Streamlit Airbnb ETL & Visualization (Direct CSV)
-# ============================
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
-from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
-# ============================
-# Streamlit App
-# ============================
 st.set_page_config(page_title="Airbnb Occupancy Dashboard", layout="wide")
 st.title("Airbnb Data ETL & Visualization")
 
 # ============================
-# 1. Load CSV Files
+# Load CSV Files
 # ============================
-bnb = pd.read_csv('listings.csv')
-calendar = pd.read_csv('calendar.csv')
+try:
+    bnb = pd.read_csv('listings.csv')
+    calendar = pd.read_csv('calendar.csv')
+    st.success("CSV files loaded successfully!")
+except FileNotFoundError:
+    st.error("Error: CSV files not found. Make sure 'listings.csv' and 'calendar.csv' are in the same folder as this app.")
+    st.stop()
 
-st.success("CSV files loaded successfully!")
+# ============================
+# Check required columns
+# ============================
+required_listings_cols = ['id','neighbourhood_group','room_type']
+required_calendar_cols = ['listing_id','date','available']
+
+missing_listings = [c for c in required_listings_cols if c not in bnb.columns]
+missing_calendar = [c for c in required_calendar_cols if c not in calendar.columns]
+
+if missing_listings:
+    st.error(f"Missing columns in listings.csv: {missing_listings}")
+    st.stop()
+if missing_calendar:
+    st.error(f"Missing columns in calendar.csv: {missing_calendar}")
+    st.stop()
 
 # ============================
-# 2. Transform Data
+# Transform Data
 # ============================
-calendar['date'] = pd.to_datetime(calendar['date'])
+calendar['date'] = pd.to_datetime(calendar['date'], errors='coerce')
+calendar = calendar.dropna(subset=['date'])  # remove invalid dates
 calendar['year_month'] = calendar['date'].dt.to_period('M')
-calendar['occupied'] = calendar['available'].apply(lambda x: 1 if x=='f' else 0)
+
+# Handle different values in 'available' column
+calendar['occupied'] = calendar['available'].apply(lambda x: 1 if str(x).lower()=='f' else 0)
 
 # Merge listings info
 calendar = calendar.merge(
@@ -38,7 +53,7 @@ calendar = calendar.merge(
     left_on='listing_id', right_on='id', how='left'
 )
 
-# Aggregate occupancy per month per neighbourhood_group
+# Aggregate occupancy
 monthly_occupancy = (
     calendar.groupby(['year_month','neighbourhood_group'])['occupied']
     .mean()
@@ -47,19 +62,18 @@ monthly_occupancy = (
 monthly_occupancy['occupancy_percent'] = monthly_occupancy['occupied']*100
 
 # ============================
-# 3. Show Cleaned Data
+# Display Data
 # ============================
 st.subheader("Monthly Occupancy Data")
 st.dataframe(monthly_occupancy)
 
-# Option to download cleaned CSV
 csv = monthly_occupancy.to_csv(index=False)
 st.download_button("Download Monthly Occupancy CSV", csv, "monthly_occupancy.csv", "text/csv")
 
 # ============================
-# 4. Visualization
+# Visualizations
 # ============================
-st.subheader("Seasonal Occupancy Trends (Interactive)")
+st.subheader("Seasonal Occupancy Trends")
 fig = px.line(
     monthly_occupancy,
     x='year_month',
@@ -73,9 +87,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 # Heatmap
 st.subheader("Monthly Occupancy Heatmap")
-heatmap_data = monthly_occupancy.pivot(
-    index='year_month', columns='neighbourhood_group', values='occupancy_percent'
-)
+heatmap_data = monthly_occupancy.pivot(index='year_month', columns='neighbourhood_group', values='occupancy_percent')
 plt.figure(figsize=(12,6))
 sns.heatmap(heatmap_data, annot=True, fmt=".1f", cmap='YlGnBu')
 plt.title("Monthly Occupancy (%) by Neighbourhood Group")
