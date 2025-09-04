@@ -1,122 +1,91 @@
 # ============================
-# Import libraries
+# Streamlit Airbnb ETL & Visualization
 # ============================
+import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.cbook import boxplot_stats
-from statsmodels.formula.api import ols
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.naive_bayes import GaussianNB
-from sklearn.preprocessing import LabelEncoder
 import plotly.express as px
+import seaborn as sns
+import matplotlib.pyplot as plt
+from datetime import datetime
+import io
 import warnings
 warnings.filterwarnings("ignore")
-import pickle
 
 # ============================
-# Load dataset
+# Streamlit App
 # ============================
-bnb = pd.read_csv('listings.csv')
+st.set_page_config(page_title="Airbnb Occupancy Dashboard", layout="wide")
+st.title("Airbnb Data ETL & Visualization")
 
 # ============================
-# Basic info
+# 1. Upload Data
 # ============================
-print("Columns:", bnb.columns)
-print("Shape:", bnb.shape)
-print("Info:")
-print(bnb.info())
-print("Description:")
-print(bnb.describe())
+st.sidebar.header("Upload CSV files")
+listings_file = st.sidebar.file_uploader("Upload listings.csv", type="csv")
+calendar_file = st.sidebar.file_uploader("Upload calendar.csv", type="csv")
 
-# ============================
-# Matplotlib Histograms
-# ============================
-fig, axes = plt.subplots(1, 2, figsize=(12,5))
-sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
-sns.histplot(bnb['room_type'], color="olive", ax=axes[1])
-plt.show()
-
-# ============================
-# Outlier detection in price
-# ============================
-outlier_list = boxplot_stats(bnb.price)[0]['fliers']
-outlier_rows = bnb[bnb.price.isin(outlier_list)]
-print("Number of rows containing outliers in price:", outlier_rows.shape[0])
-percent_outliers = (outlier_rows.shape[0]/bnb.shape[0])*100
-print("Percentage of price outliers:", percent_outliers)
-
-# ============================
-# Plotly Histograms for categorical variables
-# ============================
-px.histogram(bnb, x="neighbourhood_group", title="Neighbourhood Group")
-px.histogram(bnb, x="neighbourhood", title="Neighbourhood")
-
-# ============================
-# Boxplots for price vs category
-# ============================
-px.box(bnb, x="neighbourhood_group", y="price", color="neighbourhood_group", title="Price vs Neighbourhood Group")
-px.box(bnb, x="room_type", y="price", color="room_type", title="Price vs Room Type")
-
-# ============================
-# Correlation Heatmap (numeric only)
-# ============================
-numeric_cols = bnb.select_dtypes(include='number')
-plt.figure(figsize=(10,8))
-sns.heatmap(numeric_cols.corr(), annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-plt.show()
-
-# ============================
-# Scatterplots
-# ============================
-sns.relplot(x="neighbourhood_group", y="price", hue="room_type", style="room_type", data=bnb)
-sns.boxplot(x="room_type", y="price", data=bnb)
-sns.regplot(x="price", y="minimum_nights", data=bnb, fit_reg=True)
-plt.show()
-
-# ============================
-# Linear Regression
-# ============================
-# Simple regression
-m1 = ols('price ~ minimum_nights', bnb).fit()
-print("Simple Regression Summary:")
-print(m1.summary())
-
-# Multiple regression
-m2 = ols('price ~ minimum_nights + neighbourhood_group + neighbourhood + room_type + reviews_per_month + number_of_reviews', bnb).fit()
-print("Multiple Regression Summary:")
-print(m2.summary())
-
-# ============================
-# Classification: Predict neighbourhood_group
-# ============================
-X = bnb.drop('neighbourhood_group', axis=1)
-y = bnb['neighbourhood_group']
-
-# Encode categorical variables
-categorical_cols = X.select_dtypes(include='object').columns
-le = LabelEncoder()
-for col in categorical_cols:
-    X[col] = le.fit_transform(X[col])
-
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-
-# Spot check algorithms
-models = [('LDA', LinearDiscriminantAnalysis()), ('NB', GaussianNB())]
-results = []
-names = []
-
-for name, model in models:
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_results = cross_val_score(model, X_train, y_train, cv=kfold, scoring='accuracy')
-    results.append(cv_results)
-    names.append(name)
-    print('%s: %f (%f)' % (name, cv_results.mean(), cv_results.std()))
-
-# Compare algorithms
-plt.boxplot(results, labels=names)
-plt.title('Algorithm Comparison')
-plt.show()
+if listings_file and calendar_file:
+    bnb = pd.read_csv(listings_file)
+    calendar = pd.read_csv(calendar_file)
+    
+    st.success("Files uploaded successfully!")
+    
+    # ============================
+    # 2. Transform Data
+    # ============================
+    calendar['date'] = pd.to_datetime(calendar['date'])
+    calendar['year_month'] = calendar['date'].dt.to_period('M')
+    calendar['occupied'] = calendar['available'].apply(lambda x: 1 if x=='f' else 0)
+    
+    # Merge listings info
+    calendar = calendar.merge(
+        bnb[['id','neighbourhood_group','room_type']],
+        left_on='listing_id', right_on='id', how='left'
+    )
+    
+    # Aggregate occupancy per month per neighbourhood_group
+    monthly_occupancy = (
+        calendar.groupby(['year_month','neighbourhood_group'])['occupied']
+        .mean()
+        .reset_index()
+    )
+    monthly_occupancy['occupancy_percent'] = monthly_occupancy['occupied']*100
+    
+    # ============================
+    # 3. Show Cleaned Data
+    # ============================
+    st.subheader("Monthly Occupancy Data")
+    st.dataframe(monthly_occupancy)
+    
+    # Option to download cleaned CSV
+    csv = monthly_occupancy.to_csv(index=False)
+    st.download_button("Download Monthly Occupancy CSV", csv, "monthly_occupancy.csv", "text/csv")
+    
+    # ============================
+    # 4. Visualization
+    # ============================
+    st.subheader("Seasonal Occupancy Trends (Interactive)")
+    fig = px.line(
+        monthly_occupancy,
+        x='year_month',
+        y='occupancy_percent',
+        color='neighbourhood_group',
+        markers=True,
+        title='Seasonal Airbnb Occupancy Trends by Neighbourhood Group'
+    )
+    fig.update_layout(xaxis_title='Month', yaxis_title='Occupancy (%)')
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Heatmap
+    st.subheader("Monthly Occupancy Heatmap")
+    heatmap_data = monthly_occupancy.pivot(
+        index='year_month', columns='neighbourhood_group', values='occupancy_percent'
+    )
+    plt.figure(figsize=(12,6))
+    sns.heatmap(heatmap_data, annot=True, fmt=".1f", cmap='YlGnBu')
+    plt.title("Monthly Occupancy (%) by Neighbourhood Group")
+    st.pyplot(plt)
+    
+else:
+    st.info("Please upload both listings.csv and calendar.csv to proceed.")
