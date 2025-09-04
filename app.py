@@ -1,11 +1,11 @@
 # ============================
-# Importing libraries
+# Import libraries
 # ============================
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.cbook import boxplot_stats
-import statsmodels.api as sm
 from statsmodels.formula.api import ols
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -21,14 +21,18 @@ import pickle
 # ============================
 bnb = pd.read_csv('listings.csv')
 
+# ============================
 # Basic info
-print(bnb.columns)
-print(bnb.shape)
+# ============================
+print("Columns:", bnb.columns)
+print("Shape:", bnb.shape)
+print("Info:")
 print(bnb.info())
+print("Description:")
 print(bnb.describe())
 
 # ============================
-# Histograms
+# Matplotlib Histograms
 # ============================
 fig, axes = plt.subplots(1, 2, figsize=(12,5))
 sns.histplot(bnb['neighbourhood_group'], color="skyblue", ax=axes[0])
@@ -45,25 +49,28 @@ percent_outliers = (outlier_rows.shape[0]/bnb.shape[0])*100
 print("Percentage of price outliers:", percent_outliers)
 
 # ============================
-# Plotly histograms
+# Plotly Histograms for categorical variables
 # ============================
 px.histogram(bnb, x="neighbourhood_group", title="Neighbourhood Group")
 px.histogram(bnb, x="neighbourhood", title="Neighbourhood")
 
 # ============================
-# Boxplots
+# Boxplots for price vs category
 # ============================
 px.box(bnb, x="neighbourhood_group", y="price", color="neighbourhood_group", title="Price vs Neighbourhood Group")
 px.box(bnb, x="room_type", y="price", color="room_type", title="Price vs Room Type")
 
 # ============================
-# Heatmap of correlations
+# Correlation Heatmap (numeric only)
 # ============================
+numeric_cols = bnb.select_dtypes(include='number')
 plt.figure(figsize=(10,8))
-sns.heatmap(bnb.corr(), annot=True, cmap='coolwarm', vmin=-1, vmax=1)
+sns.heatmap(numeric_cols.corr(), annot=True, cmap='coolwarm', vmin=-1, vmax=1)
 plt.show()
 
+# ============================
 # Scatterplots
+# ============================
 sns.relplot(x="neighbourhood_group", y="price", hue="room_type", style="room_type", data=bnb)
 sns.boxplot(x="room_type", y="price", data=bnb)
 sns.regplot(x="price", y="minimum_nights", data=bnb, fit_reg=True)
@@ -74,14 +81,16 @@ plt.show()
 # ============================
 # Simple regression
 m1 = ols('price ~ minimum_nights', bnb).fit()
+print("Simple Regression Summary:")
 print(m1.summary())
 
 # Multiple regression
 m2 = ols('price ~ minimum_nights + neighbourhood_group + neighbourhood + room_type + reviews_per_month + number_of_reviews', bnb).fit()
+print("Multiple Regression Summary:")
 print(m2.summary())
 
 # ============================
-# Classification: predict neighbourhood_group
+# Classification: Predict neighbourhood_group
 # ============================
 X = bnb.drop('neighbourhood_group', axis=1)
 y = bnb['neighbourhood_group']
