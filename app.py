@@ -11,7 +11,7 @@ st.title("🏡 Airbnb Occupancy Dashboard")
 
 st.write("""
 This app lets you explore Airbnb occupancy trends from your CSV files.
-It provides interactive filters, line charts, and heatmaps.
+It handles compressed files and provides interactive filtering, line charts, and heatmaps.
 """)
 
 # ============================
@@ -20,7 +20,12 @@ It provides interactive filters, line charts, and heatmaps.
 @st.cache_data
 def load_csv(filename):
     try:
-        df = pd.read_csv(filename, encoding='utf-8', on_bad_lines='skip')
+        # Try reading as regular CSV first
+        try:
+            df = pd.read_csv(filename)
+        except UnicodeDecodeError:
+            # If fails, read as gzip
+            df = pd.read_csv(filename, compression='gzip')
         return df
     except Exception as e:
         st.error(f"Error loading {filename}: {e}")
@@ -32,6 +37,21 @@ calendar = load_csv("calendar.csv")
 if bnb.empty or calendar.empty:
     st.stop()
 st.success("✅ CSV files loaded successfully!")
+
+# ============================
+# Check required columns
+# ============================
+required_listings_cols = ['id','neighbourhood_group','room_type']
+required_calendar_cols = ['listing_id','date','available']
+
+for col in required_listings_cols:
+    if col not in bnb.columns:
+        st.error(f"Missing column in listings.csv: {col}")
+        st.stop()
+for col in required_calendar_cols:
+    if col not in calendar.columns:
+        st.error(f"Missing column in calendar.csv: {col}")
+        st.stop()
 
 # ============================
 # Preprocessing
@@ -86,38 +106,4 @@ st.download_button("📥 Download CSV", csv, "filtered_monthly_occupancy.csv", "
 # ============================
 # Interactive Line Chart
 # ============================
-st.subheader("Seasonal Occupancy Trends")
-fig_line = px.line(
-    filtered_data,
-    x='year_month',
-    y='occupancy_percent',
-    color='neighbourhood_group',
-    line_dash='room_type',
-    markers=True,
-    title='Seasonal Airbnb Occupancy Trends'
-)
-fig_line.update_layout(xaxis_title='Month', yaxis_title='Occupancy (%)')
-st.plotly_chart(fig_line, use_container_width=True)
-
-# ============================
-# Interactive Heatmap
-# ============================
-st.subheader("Monthly Occupancy Heatmap")
-heatmap_data = filtered_data.groupby(['year_month','neighbourhood_group'])['occupancy_percent'].mean().unstack(fill_value=0)
-
-fig_heatmap = go.Figure(
-    data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale='YlGnBu',
-        hovertemplate="Month: %{y}<br>Neighbourhood: %{x}<br>Occupancy: %{z:.1f}%<extra></extra>"
-    )
-)
-fig_heatmap.update_layout(
-    title="Monthly Occupancy (%) by Neighbourhood Group",
-    xaxis_title="Neighbourhood Group",
-    yaxis_title="Month",
-    yaxis=dict(autorange='reversed')
-)
-st.plotly_chart(fig_heatmap, use_container_width=True)
+st.subheader("S
