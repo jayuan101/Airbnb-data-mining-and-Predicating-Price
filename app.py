@@ -10,52 +10,28 @@ st.set_page_config(page_title="Airbnb Occupancy Dashboard", layout="wide")
 st.title("🏡 Airbnb Occupancy Dashboard")
 
 st.write("""
-Upload your Airbnb CSV files to explore occupancy data and visualize seasonal trends.  
-The app handles encoding issues and allows interactive filtering by neighborhood and room type.
+This app lets you explore Airbnb occupancy trends from your CSV files.
+It provides interactive filters, line charts, and heatmaps.
 """)
 
 # ============================
-# Upload CSV files
-# ============================
-bnb_file = st.file_uploader("Upload listings.csv", type=["csv"])
-calendar_file = st.file_uploader("Upload calendar.csv", type=["csv"])
-
-if not bnb_file or not calendar_file:
-    st.info("Please upload both CSV files to continue.")
-    st.stop()
-
-# ============================
-# Load CSVs safely
+# Load CSV Files
 # ============================
 @st.cache_data
-def load_csvs(bnb_file, calendar_file):
+def load_csv(filename):
     try:
-        bnb = pd.read_csv(bnb_file, encoding='utf-8', on_bad_lines='skip')
-        calendar = pd.read_csv(calendar_file, encoding='utf-8', on_bad_lines='skip')
-        return bnb, calendar
+        df = pd.read_csv(filename, encoding='utf-8', on_bad_lines='skip')
+        return df
     except Exception as e:
-        st.error(f"Error loading CSVs: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        st.error(f"Error loading {filename}: {e}")
+        return pd.DataFrame()
 
-bnb, calendar = load_csvs(bnb_file, calendar_file)
+bnb = load_csv("listings.csv")
+calendar = load_csv("calendar.csv")
+
 if bnb.empty or calendar.empty:
     st.stop()
 st.success("✅ CSV files loaded successfully!")
-
-# ============================
-# Check required columns
-# ============================
-required_listings_cols = ['id','neighbourhood_group','room_type']
-required_calendar_cols = ['listing_id','date','available']
-
-for col in required_listings_cols:
-    if col not in bnb.columns:
-        st.error(f"Missing column in listings.csv: {col}")
-        st.stop()
-for col in required_calendar_cols:
-    if col not in calendar.columns:
-        st.error(f"Missing column in calendar.csv: {col}")
-        st.stop()
 
 # ============================
 # Preprocessing
