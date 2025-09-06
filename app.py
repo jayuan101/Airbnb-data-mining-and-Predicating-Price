@@ -106,4 +106,39 @@ st.download_button("📥 Download CSV", csv, "filtered_monthly_occupancy.csv", "
 # ============================
 # Interactive Line Chart
 # ============================
-st.subheader("S
+st.subheader("📈 Occupancy Trends Over Time")
+fig = px.line(
+    filtered_data,
+    x="year_month",
+    y="occupancy_percent",
+    color="neighbourhood_group",
+    line_group="room_type",
+    markers=True,
+    title="Monthly Occupancy by Neighbourhood and Room Type"
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# ============================
+# Heatmap
+# ============================
+st.subheader("🔥 Occupancy Heatmap")
+heatmap_data = filtered_data.pivot_table(
+    index="neighbourhood_group",
+    columns="year_month",
+    values="occupancy_percent"
+)
+
+fig_heatmap = go.Figure(
+    data=go.Heatmap(
+        z=heatmap_data.values,
+        x=heatmap_data.columns,
+        y=heatmap_data.index,
+        colorscale="Viridis"
+    )
+)
+fig_heatmap.update_layout(
+    title="Occupancy Heatmap",
+    xaxis_title="Month",
+    yaxis_title="Neighbourhood Group"
+)
+st.plotly_chart(fig_heatmap, use_container_width=True)
