@@ -9,7 +9,7 @@ st.title("🏡 Airbnb Listings Dashboard + Price & Availability Prediction")
 
 st.write("""
 Explore Airbnb listings data from your `listings.csv`  
-with filters, visualizations, and **predicted prices & weekly availability**.
+with filters, visualizations, and **predicted prices, availability, and trip cost**.
 """)
 
 # ============================
@@ -89,9 +89,32 @@ if selected_group != "All" and selected_room != "All":
         (group_avg['neighbourhood_group'] == selected_group) &
         (group_avg['room_type'] == selected_room)
     ]['price'].values[0]
-    st.success(f"Predicted average price for **{selected_group} — {selected_room}** is **${predicted_price:.2f}**")
+    st.success(f"Predicted average nightly price for **{selected_group} — {selected_room}** is **${predicted_price:.2f}**")
 else:
     st.info("ℹ️ Select both a Neighbourhood Group and a Room Type to see predicted price.")
+
+# ============================
+# User Input: Stay Duration
+# ============================
+if selected_group != "All" and selected_room != "All":
+    st.subheader("📅 Estimate Trip Cost")
+
+    stay_length = st.number_input("Enter length of stay:", min_value=1, max_value=365, value=7)
+    stay_unit = st.radio("Select unit:", ["Days", "Weeks", "Months"], horizontal=True)
+
+    # Convert to days
+    if stay_unit == "Days":
+        total_days = stay_length
+    elif stay_unit == "Weeks":
+        total_days = stay_length * 7
+    else:  # Months
+        total_days = stay_length * 30  # approx
+
+    estimated_cost = predicted_price * total_days
+    st.success(f"For **{stay_length} {stay_unit}** (~{total_days} days), "
+               f"the estimated cost is **${estimated_cost:,.2f}**")
+else:
+    st.info("ℹ️ Select both filters to estimate trip cost.")
 
 # ============================
 # Weekly Availability Prediction
@@ -99,7 +122,6 @@ else:
 if 'availability_365' in bnb.columns:
     st.subheader("📅 Predicted Weekly Availability")
     
-    # Compute average days available per week
     bnb['days_per_week'] = bnb['availability_365'] / 52
     
     group_avail = (
@@ -116,8 +138,6 @@ if 'availability_365' in bnb.columns:
         st.success(f"Predicted availability: **{predicted_days:.1f} days per week** for **{selected_group} — {selected_room}**")
     else:
         st.dataframe(group_avail.rename(columns={'days_per_week':'avg_days_per_week'}))
-else:
-    st.info("ℹ️ No `availability_365` column found — cannot estimate weekly availability.")
 
 # ============================
 # Summary Stats
