@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import warnings
 warnings.filterwarnings("ignore")
@@ -47,12 +46,12 @@ st.sidebar.header("Filters")
 neighbourhood_groups = sorted(bnb['neighbourhood_group'].dropna().unique())
 room_types = sorted(bnb['room_type'].dropna().unique())
 
-selected_groups = st.sidebar.multiselect("Neighbourhood Group", neighbourhood_groups, default=neighbourhood_groups)
-selected_rooms = st.sidebar.multiselect("Room Type", room_types, default=room_types)
+selected_group = st.sidebar.selectbox("Neighbourhood Group", neighbourhood_groups)
+selected_room = st.sidebar.selectbox("Room Type", room_types)
 
 filtered_data = bnb[
-    (bnb['neighbourhood_group'].isin(selected_groups)) &
-    (bnb['room_type'].isin(selected_rooms))
+    (bnb['neighbourhood_group'] == selected_group) &
+    (bnb['room_type'] == selected_room)
 ]
 
 if filtered_data.empty:
@@ -72,41 +71,28 @@ st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv"
 # Summary Metrics
 # ============================
 st.subheader("📊 Summary Statistics")
-summary = (
-    filtered_data.groupby(['neighbourhood_group','room_type'])
-    .agg(
-        count=('id','count'),
-        avg_price=('price','mean'),
-        median_price=('price','median')
-    )
-    .reset_index()
-)
-st.dataframe(summary)
+summary = {
+    "Listings Count": len(filtered_data),
+    "Average Price": round(filtered_data['price'].mean(), 2),
+    "Median Price": round(filtered_data['price'].median(), 2)
+}
+st.json(summary)
 
 # ============================
-# Bar Chart
+# Histogram of Prices
 # ============================
-st.subheader("🏙️ Listings Count by Neighbourhood Group")
-fig = px.bar(
-    summary,
-    x="neighbourhood_group",
-    y="count",
-    color="room_type",
-    barmode="group",
-    title="Number of Listings by Neighbourhood and Room Type"
+st.subheader("💵 Price Distribution")
+fig = px.histogram(
+    filtered_data,
+    x="price",
+    nbins=50,
+    title=f"Price Distribution for {selected_group} — {selected_room}"
 )
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================
-# Box Plot
+# Map (if lat/lon exist)
 # ============================
-st.subheader("💵 Price Distribution")
-fig2 = px.box(
-    filtered_data,
-    x="neighbourhood_group",
-    y="price",
-    color="room_type",
-    points="all",
-    title="Price Distribution by Neighbourhood and Room Type"
-)
-st.plotly_chart(fig2, use_container_width=True)
+if 'latitude' in filtered_data.columns and 'longitude' in filtered_data.columns:
+    st.subheader("🗺️ Map of Listings")
+    st.map(filtered_data[['latitude','longitude']])
