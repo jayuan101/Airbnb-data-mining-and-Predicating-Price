@@ -5,11 +5,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Airbnb Listings Dashboard", layout="wide")
-st.title("🏡 Airbnb Listings Dashboard + Price Prediction")
+st.title("🏡 Airbnb Listings Dashboard + Price & Availability Prediction")
 
 st.write("""
 Explore Airbnb listings data from your `listings.csv`  
-with filters, visualizations, and **predicted prices**.
+with filters, visualizations, and **predicted prices & weekly availability**.
 """)
 
 # ============================
@@ -67,7 +67,10 @@ if filtered_data.empty:
 # Display Data & Download
 # ============================
 st.subheader("Filtered Listings Data")
-st.dataframe(filtered_data[['id','neighbourhood_group','room_type','price']])
+cols_to_show = ['id','neighbourhood_group','room_type','price']
+if 'availability_365' in filtered_data.columns:
+    cols_to_show.append('availability_365')
+st.dataframe(filtered_data[cols_to_show])
 
 csv = filtered_data.to_csv(index=False)
 st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv")
@@ -76,7 +79,6 @@ st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv"
 # Price Prediction (simple: group averages)
 # ============================
 st.subheader("💡 Predicted Price")
-
 if selected_group != "All" and selected_room != "All":
     group_avg = (
         bnb.groupby(['neighbourhood_group','room_type'])['price']
@@ -87,10 +89,35 @@ if selected_group != "All" and selected_room != "All":
         (group_avg['neighbourhood_group'] == selected_group) &
         (group_avg['room_type'] == selected_room)
     ]['price'].values[0]
-
     st.success(f"Predicted average price for **{selected_group} — {selected_room}** is **${predicted_price:.2f}**")
 else:
     st.info("ℹ️ Select both a Neighbourhood Group and a Room Type to see predicted price.")
+
+# ============================
+# Weekly Availability Prediction
+# ============================
+if 'availability_365' in bnb.columns:
+    st.subheader("📅 Predicted Weekly Availability")
+    
+    # Compute average days available per week
+    bnb['days_per_week'] = bnb['availability_365'] / 52
+    
+    group_avail = (
+        bnb.groupby(['neighbourhood_group','room_type'])['days_per_week']
+        .mean()
+        .reset_index()
+    )
+    
+    if selected_group != "All" and selected_room != "All":
+        predicted_days = group_avail[
+            (group_avail['neighbourhood_group'] == selected_group) &
+            (group_avail['room_type'] == selected_room)
+        ]['days_per_week'].values[0]
+        st.success(f"Predicted availability: **{predicted_days:.1f} days per week** for **{selected_group} — {selected_room}**")
+    else:
+        st.dataframe(group_avail.rename(columns={'days_per_week':'avg_days_per_week'}))
+else:
+    st.info("ℹ️ No `availability_365` column found — cannot estimate weekly availability.")
 
 # ============================
 # Summary Stats
@@ -101,6 +128,8 @@ summary = {
     "Average Price": round(filtered_data['price'].mean(), 2),
     "Median Price": round(filtered_data['price'].median(), 2)
 }
+if 'availability_365' in filtered_data.columns:
+    summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
 st.json(summary)
 
 # ============================
