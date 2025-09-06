@@ -2,10 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import warnings
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Airbnb Listings Dashboard", layout="wide")
@@ -13,7 +9,7 @@ st.title("🏡 Airbnb Listings Dashboard + Price Prediction")
 
 st.write("""
 Explore Airbnb listings data from your `listings.csv`  
-and predict **expected price** based on *Neighbourhood Group* and *Room Type*.
+with filters, visualizations, and **predicted prices**.
 """)
 
 # ============================
@@ -45,7 +41,7 @@ for col in required_cols:
 
 # Clean data: remove invalid prices
 bnb = bnb[bnb['price'] > 0]
-bnb = bnb[bnb['price'] < 1000]  # optional: remove extreme outliers
+bnb = bnb[bnb['price'] < 1000]  # optional: drop extreme outliers
 
 # ============================
 # Sidebar Filters (dropdowns)
@@ -54,51 +50,58 @@ st.sidebar.header("Filters")
 neighbourhood_groups = sorted(bnb['neighbourhood_group'].dropna().unique())
 room_types = sorted(bnb['room_type'].dropna().unique())
 
-selected_group = st.sidebar.selectbox("Neighbourhood Group", neighbourhood_groups)
-selected_room = st.sidebar.selectbox("Room Type", room_types)
+selected_group = st.sidebar.selectbox("Neighbourhood Group", ["All"] + neighbourhood_groups)
+selected_room = st.sidebar.selectbox("Room Type", ["All"] + room_types)
 
-filtered_data = bnb[
-    (bnb['neighbourhood_group'] == selected_group) &
-    (bnb['room_type'] == selected_room)
-]
+filtered_data = bnb.copy()
+if selected_group != "All":
+    filtered_data = filtered_data[filtered_data['neighbourhood_group'] == selected_group]
+if selected_room != "All":
+    filtered_data = filtered_data[filtered_data['room_type'] == selected_room]
 
 if filtered_data.empty:
     st.warning("⚠️ No data available for selected filters.")
     st.stop()
 
 # ============================
-# Display Data
+# Display Data & Download
 # ============================
 st.subheader("Filtered Listings Data")
 st.dataframe(filtered_data[['id','neighbourhood_group','room_type','price']])
 
-# ============================
-# Build Model for Prediction
-# ============================
-X = bnb[['neighbourhood_group','room_type']]
-y = bnb['price']
-
-# Preprocess categorical features
-preprocessor = ColumnTransformer(
-    transformers=[('cat', OneHotEncoder(handle_unknown='ignore'), ['neighbourhood_group','room_type'])]
-)
-
-# Simple linear regression
-model = Pipeline(steps=[
-    ('preprocessor', preprocessor),
-    ('regressor', LinearRegression())
-])
-model.fit(X, y)
-
-# Predict price for current selection
-pred_price = model.predict(pd.DataFrame([[selected_group, selected_room]],
-                                        columns=['neighbourhood_group','room_type']))[0]
+csv = filtered_data.to_csv(index=False)
+st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv")
 
 # ============================
-# Show Prediction
+# Price Prediction (simple: group averages)
 # ============================
 st.subheader("💡 Predicted Price")
-st.success(f"Predicted average price for **{selected_group} — {selected_room}** is **${pred_price:.2f}**")
+
+if selected_group != "All" and selected_room != "All":
+    group_avg = (
+        bnb.groupby(['neighbourhood_group','room_type'])['price']
+        .mean()
+        .reset_index()
+    )
+    predicted_price = group_avg[
+        (group_avg['neighbourhood_group'] == selected_group) &
+        (group_avg['room_type'] == selected_room)
+    ]['price'].values[0]
+
+    st.success(f"Predicted average price for **{selected_group} — {selected_room}** is **${predicted_price:.2f}**")
+else:
+    st.info("ℹ️ Select both a Neighbourhood Group and a Room Type to see predicted price.")
+
+# ============================
+# Summary Stats
+# ============================
+st.subheader("📊 Summary Statistics")
+summary = {
+    "Listings Count": len(filtered_data),
+    "Average Price": round(filtered_data['price'].mean(), 2),
+    "Median Price": round(filtered_data['price'].median(), 2)
+}
+st.json(summary)
 
 # ============================
 # Histogram of Prices
@@ -108,13 +111,32 @@ fig = px.histogram(
     filtered_data,
     x="price",
     nbins=50,
-    title=f"Price Distribution for {selected_group} — {selected_room}"
+    title=f"Price Distribution ({selected_group} | {selected_room})"
 )
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================
-# Map (if lat/lon exist)
+# Interactive Map
 # ============================
 if 'latitude' in filtered_data.columns and 'longitude' in filtered_data.columns:
-    st.subheader("🗺️ Map of Listings")
-    st.map(filtered_data[['latitude','longitude']])
+    st.subheader("🗺️ Interactive Map of Listings")
+
+    fig_map = px.scatter_mapbox(
+        filtered_data,
+        lat="latitude",
+        lon="longitude",
+        color="price",
+        size="price",
+        hover_name="id",
+        hover_data={"neighbourhood_group": True, "room_type": True, "price": True},
+        zoom=10,
+        height=600,
+        color_continuous_scale=px.colors.cyclical.IceFire
+    )
+
+    fig_map.update_layout(
+        mapbox_style="open-street-map",
+        margin={"r":0,"t":0,"l":0,"b":0}
+    )
+
+    st.plotly_chart(fig_map, use_container_width=True)
