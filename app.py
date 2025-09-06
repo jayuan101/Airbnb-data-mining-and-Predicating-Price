@@ -64,7 +64,6 @@ stay_length = st.sidebar.number_input(
     value=7,
     help="Enter the number of days, weeks, or months you plan to stay"
 )
-
 stay_unit = st.sidebar.radio(
     "Select unit:",
     ["Days", "Weeks", "Months"],
@@ -85,11 +84,8 @@ if filtered_data.empty:
     st.stop()
 
 # ============================
-# Sidebar: Predictions & Summary
-# ============================
-st.sidebar.subheader("Predictions & Summary")
-
 # Convert stay length to days
+# ============================
 if stay_unit == "Days":
     total_days = stay_length
 elif stay_unit == "Weeks":
@@ -97,7 +93,9 @@ elif stay_unit == "Weeks":
 else:
     total_days = stay_length * 30  # approx
 
+# ============================
 # Predicted Price
+# ============================
 predicted_price = None
 if selected_group != "All" and selected_room != "All":
     group_avg = bnb.groupby(['neighbourhood_group','room_type'])['price'].mean().reset_index()
@@ -105,10 +103,12 @@ if selected_group != "All" and selected_room != "All":
         (group_avg['neighbourhood_group']==selected_group) &
         (group_avg['room_type']==selected_room)
     ]['price'].values[0]
-    st.sidebar.info(f"Predicted nightly price: **${predicted_price:.2f}**")
 
+# ============================
 # Predicted Availability
+# ============================
 predicted_days_year = None
+predicted_days_week = None
 if 'availability_365' in bnb.columns and selected_group != "All" and selected_room != "All":
     group_avail = bnb.groupby(['neighbourhood_group','room_type'])['days_per_week'].mean().reset_index()
     predicted_days_week = group_avail[
@@ -116,28 +116,52 @@ if 'availability_365' in bnb.columns and selected_group != "All" and selected_ro
         (group_avail['room_type']==selected_room)
     ]['days_per_week'].values[0]
     predicted_days_year = predicted_days_week * 52
-    st.sidebar.info(f"Predicted availability: **{predicted_days_week:.1f} days/week** (~{predicted_days_year:.0f} days/year)")
 
-# Estimated Trip Cost with Availability Check
-if predicted_price:
-    estimated_cost = predicted_price * total_days
-    if predicted_days_year:
-        if total_days <= predicted_days_year:
-            st.sidebar.success(f"Estimated cost for {stay_length} {stay_unit}: **${estimated_cost:,.2f}** ✅ Likely available")
-        else:
-            st.sidebar.error(f"Estimated cost: **${estimated_cost:,.2f}** ⚠️ Stay may exceed availability")
+# ============================
+# Sidebar: Predictions & Summary UI
+# ============================
+st.sidebar.subheader("Predictions & Summary")
+with st.sidebar.container():
+    # Predicted Price
+    st.markdown("### 💡 Predicted Price")
+    if predicted_price:
+        st.metric(label="Nightly Price", value=f"${predicted_price:.2f}")
     else:
-        st.sidebar.success(f"Estimated cost for {stay_length} {stay_unit}: **${estimated_cost:,.2f}**")
+        st.info("Select Neighbourhood & Room Type")
 
-# Summary Statistics
-summary = {
-    "Listings Count": len(filtered_data),
-    "Average Price": round(filtered_data['price'].mean(), 2),
-    "Median Price": round(filtered_data['price'].median(), 2)
-}
-if 'availability_365' in filtered_data.columns:
-    summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
-st.sidebar.json(summary)
+    # Predicted Availability
+    st.markdown("### 📅 Predicted Availability")
+    if predicted_days_year:
+        st.metric(label="Days per Week", value=f"{predicted_days_week:.1f} days/week")
+        st.metric(label="Total Days/Year", value=f"{predicted_days_year:.0f} days/year")
+    else:
+        st.info("Availability data not available")
+
+    # Estimated Trip Cost with Availability Check
+    st.markdown("### 🏷️ Estimated Trip Cost")
+    if predicted_price:
+        estimated_cost = predicted_price * total_days
+        if predicted_days_year and total_days > predicted_days_year:
+            st.metric(label=f"{stay_length} {stay_unit} Stay Cost",
+                      value=f"${estimated_cost:,.2f}",
+                      delta="⚠️ May exceed availability", delta_color="inverse")
+        else:
+            st.metric(label=f"{stay_length} {stay_unit} Stay Cost",
+                      value=f"${estimated_cost:,.2f}",
+                      delta="✅ Likely available")
+    else:
+        st.info("Select filters to see estimated cost")
+
+    # Summary Statistics
+    st.markdown("### 📊 Summary Statistics")
+    summary = {
+        "Listings Count": len(filtered_data),
+        "Average Price": round(filtered_data['price'].mean(), 2),
+        "Median Price": round(filtered_data['price'].median(), 2)
+    }
+    if 'availability_365' in filtered_data.columns:
+        summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
+    st.json(summary)
 
 # ============================
 # Main Page: Data Table
@@ -168,7 +192,6 @@ st.plotly_chart(fig, use_container_width=True)
 # ============================
 if 'latitude' in filtered_data.columns and 'longitude' in filtered_data.columns:
     st.subheader("🗺️ Interactive Map of Listings")
-
     fig_map = px.scatter_mapbox(
         filtered_data,
         lat="latitude",
@@ -181,10 +204,8 @@ if 'latitude' in filtered_data.columns and 'longitude' in filtered_data.columns:
         height=600,
         color_continuous_scale=px.colors.cyclical.IceFire
     )
-
     fig_map.update_layout(
         mapbox_style="open-street-map",
         margin={"r":0,"t":0,"l":0,"b":0}
     )
-
     st.plotly_chart(fig_map, use_container_width=True)
