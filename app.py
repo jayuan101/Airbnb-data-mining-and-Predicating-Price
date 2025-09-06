@@ -152,17 +152,6 @@ with st.sidebar.container():
     else:
         st.info("Select filters to see estimated cost")
 
-    # Summary Statistics
-    st.markdown("### 📊 Summary Statistics")
-    summary = {
-        "Listings Count": len(filtered_data),
-        "Average Price": round(filtered_data['price'].mean(), 2),
-        "Median Price": round(filtered_data['price'].median(), 2)
-    }
-    if 'availability_365' in filtered_data.columns:
-        summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
-    st.json(summary)
-
 # ============================
 # Main Page: Data Table
 # ============================
@@ -209,3 +198,4 @@ if 'latitude' in filtered_data.columns and 'longitude' in filtered_data.columns:
         margin={"r":0,"t":0,"l":0,"b":0}
     )
     st.plotly_chart(fig_map, use_container_width=True)
+
