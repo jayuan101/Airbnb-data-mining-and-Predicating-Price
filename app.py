@@ -31,7 +31,7 @@ if bnb.empty:
 st.success("✅ listings.csv loaded successfully!")
 
 # ============================
-# Check required columns
+# Clean data
 # ============================
 required_cols = ['id','neighbourhood_group','room_type','price']
 for col in required_cols:
@@ -39,20 +39,41 @@ for col in required_cols:
         st.error(f"Missing column in listings.csv: {col}")
         st.stop()
 
-# Clean data: remove invalid prices
 bnb = bnb[bnb['price'] > 0]
-bnb = bnb[bnb['price'] < 1000]  # optional: remove extreme outliers
+bnb = bnb[bnb['price'] < 1000]  # remove extreme outliers
+
+if 'availability_365' in bnb.columns:
+    bnb['days_per_week'] = bnb['availability_365'] / 52
 
 # ============================
-# Sidebar Filters
+# Sidebar Controls
 # ============================
-st.sidebar.header("Filters")
+st.sidebar.header("Filters & Inputs")
+
+# Neighbourhood Group & Room Type
 neighbourhood_groups = sorted(bnb['neighbourhood_group'].dropna().unique())
 room_types = sorted(bnb['room_type'].dropna().unique())
-
 selected_group = st.sidebar.selectbox("Neighbourhood Group", ["All"] + neighbourhood_groups)
 selected_room = st.sidebar.selectbox("Room Type", ["All"] + room_types)
 
+# Stay Duration
+stay_length = st.sidebar.number_input(
+    "Enter length of stay:",
+    min_value=1,
+    max_value=365,
+    value=7,
+    help="Enter the number of days, weeks, or months you plan to stay"
+)
+
+stay_unit = st.sidebar.radio(
+    "Select unit:",
+    ["Days", "Weeks", "Months"],
+    horizontal=True
+)
+
+# ============================
+# Filter Data
+# ============================
 filtered_data = bnb.copy()
 if selected_group != "All":
     filtered_data = filtered_data[filtered_data['neighbourhood_group'] == selected_group]
@@ -64,7 +85,62 @@ if filtered_data.empty:
     st.stop()
 
 # ============================
-# Display Filtered Data
+# Sidebar: Predictions & Summary
+# ============================
+st.sidebar.subheader("Predictions & Summary")
+
+# Convert stay length to days
+if stay_unit == "Days":
+    total_days = stay_length
+elif stay_unit == "Weeks":
+    total_days = stay_length * 7
+else:
+    total_days = stay_length * 30  # approx
+
+# Predicted Price
+predicted_price = None
+if selected_group != "All" and selected_room != "All":
+    group_avg = bnb.groupby(['neighbourhood_group','room_type'])['price'].mean().reset_index()
+    predicted_price = group_avg[
+        (group_avg['neighbourhood_group']==selected_group) &
+        (group_avg['room_type']==selected_room)
+    ]['price'].values[0]
+    st.sidebar.info(f"Predicted nightly price: **${predicted_price:.2f}**")
+
+# Predicted Availability
+predicted_days_year = None
+if 'availability_365' in bnb.columns and selected_group != "All" and selected_room != "All":
+    group_avail = bnb.groupby(['neighbourhood_group','room_type'])['days_per_week'].mean().reset_index()
+    predicted_days_week = group_avail[
+        (group_avail['neighbourhood_group']==selected_group) &
+        (group_avail['room_type']==selected_room)
+    ]['days_per_week'].values[0]
+    predicted_days_year = predicted_days_week * 52
+    st.sidebar.info(f"Predicted availability: **{predicted_days_week:.1f} days/week** (~{predicted_days_year:.0f} days/year)")
+
+# Estimated Trip Cost with Availability Check
+if predicted_price:
+    estimated_cost = predicted_price * total_days
+    if predicted_days_year:
+        if total_days <= predicted_days_year:
+            st.sidebar.success(f"Estimated cost for {stay_length} {stay_unit}: **${estimated_cost:,.2f}** ✅ Likely available")
+        else:
+            st.sidebar.error(f"Estimated cost: **${estimated_cost:,.2f}** ⚠️ Stay may exceed availability")
+    else:
+        st.sidebar.success(f"Estimated cost for {stay_length} {stay_unit}: **${estimated_cost:,.2f}**")
+
+# Summary Statistics
+summary = {
+    "Listings Count": len(filtered_data),
+    "Average Price": round(filtered_data['price'].mean(), 2),
+    "Median Price": round(filtered_data['price'].median(), 2)
+}
+if 'availability_365' in filtered_data.columns:
+    summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
+st.sidebar.json(summary)
+
+# ============================
+# Main Page: Data Table
 # ============================
 st.subheader("Filtered Listings Data")
 cols_to_show = ['id','neighbourhood_group','room_type','price']
@@ -76,106 +152,7 @@ csv = filtered_data.to_csv(index=False)
 st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv")
 
 # ============================
-# Predicted Nightly Price
-# ============================
-st.subheader("💡 Predicted Nightly Price")
-predicted_price = None
-if selected_group != "All" and selected_room != "All":
-    group_avg = (
-        bnb.groupby(['neighbourhood_group','room_type'])['price']
-        .mean()
-        .reset_index()
-    )
-    predicted_price = group_avg[
-        (group_avg['neighbourhood_group'] == selected_group) &
-        (group_avg['room_type'] == selected_room)
-    ]['price'].values[0]
-    st.success(f"Predicted average nightly price for **{selected_group} — {selected_room}** is **${predicted_price:.2f}**")
-else:
-    st.info("ℹ️ Select both a Neighbourhood Group and a Room Type to see predicted price.")
-
-# ============================
-# User Input: Stay Duration
-# ============================
-st.subheader("📅 Estimate Trip Cost & Availability")
-
-stay_length = st.number_input(
-    "Enter length of stay:",
-    min_value=1,
-    max_value=365,
-    value=7,
-    help="Enter the number of days, weeks, or months you plan to stay"
-)
-
-stay_unit = st.radio(
-    "Select unit:",
-    ["Days", "Weeks", "Months"],
-    horizontal=True
-)
-
-# Convert input to days
-if stay_unit == "Days":
-    total_days = stay_length
-elif stay_unit == "Weeks":
-    total_days = stay_length * 7
-else:  # Months
-    total_days = stay_length * 30  # approx
-
-# ============================
-# Predicted Weekly Availability
-# ============================
-predicted_days_year = None
-if 'availability_365' in bnb.columns:
-    bnb['days_per_week'] = bnb['availability_365'] / 52
-    group_avail = (
-        bnb.groupby(['neighbourhood_group','room_type'])['days_per_week']
-        .mean()
-        .reset_index()
-    )
-    
-    if selected_group != "All" and selected_room != "All":
-        predicted_days_week = group_avail[
-            (group_avail['neighbourhood_group'] == selected_group) &
-            (group_avail['room_type'] == selected_room)
-        ]['days_per_week'].values[0]
-        predicted_days_year = predicted_days_week * 52
-
-        st.info(f"Predicted availability: **{predicted_days_week:.1f} days/week** (~{predicted_days_year:.0f} days/year)")
-    else:
-        st.dataframe(group_avail.rename(columns={'days_per_week':'avg_days_per_week'}))
-
-# ============================
-# Calculate Estimated Cost & Availability Check
-# ============================
-if predicted_price:
-    estimated_cost = predicted_price * total_days
-
-    if predicted_days_year:
-        if total_days <= predicted_days_year:
-            st.success(f"For **{stay_length} {stay_unit}** (~{total_days} days), "
-                       f"the estimated cost is **${estimated_cost:,.2f}** ✅ Likely available!")
-        else:
-            st.error(f"Requested stay of {total_days} days may exceed predicted availability "
-                     f"({predicted_days_year:.0f} days/year). Estimated cost: **${estimated_cost:,.2f}**")
-    else:
-        st.success(f"For **{stay_length} {stay_unit}** (~{total_days} days), "
-                   f"the estimated cost is **${estimated_cost:,.2f}**")
-
-# ============================
-# Summary Stats
-# ============================
-st.subheader("📊 Summary Statistics")
-summary = {
-    "Listings Count": len(filtered_data),
-    "Average Price": round(filtered_data['price'].mean(), 2),
-    "Median Price": round(filtered_data['price'].median(), 2)
-}
-if 'availability_365' in filtered_data.columns:
-    summary["Avg Availability (days/year)"] = round(filtered_data['availability_365'].mean(), 2)
-st.json(summary)
-
-# ============================
-# Histogram of Prices
+# Price Histogram
 # ============================
 st.subheader("💵 Price Distribution")
 fig = px.histogram(
