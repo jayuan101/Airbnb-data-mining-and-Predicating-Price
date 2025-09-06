@@ -2,14 +2,18 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import warnings
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 warnings.filterwarnings("ignore")
 
 st.set_page_config(page_title="Airbnb Listings Dashboard", layout="wide")
-st.title("🏡 Airbnb Listings Dashboard")
+st.title("🏡 Airbnb Listings Dashboard + Price Prediction")
 
 st.write("""
-This app lets you explore Airbnb listings data from your `listings.csv`.
-It provides interactive filtering, summary tables, and visualizations.
+Explore Airbnb listings data from your `listings.csv`  
+and predict **expected price** based on *Neighbourhood Group* and *Room Type*.
 """)
 
 # ============================
@@ -33,14 +37,18 @@ st.success("✅ listings.csv loaded successfully!")
 # ============================
 # Check required columns
 # ============================
-required_listings_cols = ['id','neighbourhood_group','room_type','price']
-for col in required_listings_cols:
+required_cols = ['id','neighbourhood_group','room_type','price']
+for col in required_cols:
     if col not in bnb.columns:
         st.error(f"Missing column in listings.csv: {col}")
         st.stop()
 
+# Clean data: remove invalid prices
+bnb = bnb[bnb['price'] > 0]
+bnb = bnb[bnb['price'] < 1000]  # optional: remove extreme outliers
+
 # ============================
-# Sidebar Filters
+# Sidebar Filters (dropdowns)
 # ============================
 st.sidebar.header("Filters")
 neighbourhood_groups = sorted(bnb['neighbourhood_group'].dropna().unique())
@@ -59,24 +67,38 @@ if filtered_data.empty:
     st.stop()
 
 # ============================
-# Display Data & Download
+# Display Data
 # ============================
 st.subheader("Filtered Listings Data")
 st.dataframe(filtered_data[['id','neighbourhood_group','room_type','price']])
 
-csv = filtered_data.to_csv(index=False)
-st.download_button("📥 Download CSV", csv, "filtered_listings.csv", "text/csv")
+# ============================
+# Build Model for Prediction
+# ============================
+X = bnb[['neighbourhood_group','room_type']]
+y = bnb['price']
+
+# Preprocess categorical features
+preprocessor = ColumnTransformer(
+    transformers=[('cat', OneHotEncoder(handle_unknown='ignore'), ['neighbourhood_group','room_type'])]
+)
+
+# Simple linear regression
+model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', LinearRegression())
+])
+model.fit(X, y)
+
+# Predict price for current selection
+pred_price = model.predict(pd.DataFrame([[selected_group, selected_room]],
+                                        columns=['neighbourhood_group','room_type']))[0]
 
 # ============================
-# Summary Metrics
+# Show Prediction
 # ============================
-st.subheader("📊 Summary Statistics")
-summary = {
-    "Listings Count": len(filtered_data),
-    "Average Price": round(filtered_data['price'].mean(), 2),
-    "Median Price": round(filtered_data['price'].median(), 2)
-}
-st.json(summary)
+st.subheader("💡 Predicted Price")
+st.success(f"Predicted average price for **{selected_group} — {selected_room}** is **${pred_price:.2f}**")
 
 # ============================
 # Histogram of Prices
